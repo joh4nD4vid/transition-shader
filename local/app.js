@@ -10,6 +10,21 @@ let fragmentShader = null;
 let material = null;
 let time = 0.0;
 
+// Fonction utilitaire pour charger un fichier texte (shader)
+function loadShader(url) {
+  return fetch(url).then(r => r.text());
+}
+
+// Fonction utilitaire pour charger une texture
+function loadTexture(url) {
+  return new Promise((resolve, reject) => {
+    const loader = new THREE.TextureLoader();
+    loader.load(url, resolve, undefined, reject);
+  });
+}
+
+
+
 let speed = {
   value : 1.0
 };
@@ -19,74 +34,69 @@ const gui = new dat.GUI();
 gui.add(speed, 'value', 0, 2, 0.1);
 
 
+
+
+let start = false;
+let increment = false;
+
+
+
+
 // Shader uniforms 
 let uniforms = {
-
-  u_time : {
-      type : 'f',
-      value : time
-  },
-
-  u_resolution : {
-    type : "v2",
-    value : new THREE.Vector2(window.innerWidth, window.innerHeight)
-        .multiplyScalar(window.devicePixelRatio)
-  },
-
-  u_speed : {
-    type : "f",
-    value : speed
-  }
-
+  u_time: { type: 'f', value: time },
+  u_resolution: { type: 'v2', value: new THREE.Vector2(window.innerWidth, window.innerHeight).multiplyScalar(window.devicePixelRatio) },
+  u_speed: { type: 'f', value: speed },
+  texture_a: { type: 'sample2d', value: null },
+  texture_b: { type: 'sample2d', value: null },
+  depth_a: { type: 'sample2d', value: null },
+  depth_b: { type: 'sample2d', value: null },
+  u_transition: { type: 'f', value: 0 }
 };
 
 
+// Nouvelle fonction d'initialisation asynchrone
+async function startApp() {
+  // Charge shaders et textures en parallèle
+  const [vertex, fragment, textureA, textureB, depthA, depthB] = await Promise.all([
+    loadShader('shaders/vertex_shader.glsl'),
+    loadShader('shaders/fragment_shader.glsl'),
+    loadTexture('../img/textures/texture_a.jpg'),
+    loadTexture('../img/textures/texture_b.jpg'),
+    loadTexture('../img/depth_map/depth_a.png'),
+    loadTexture('../img/depth_map/depth_b.png')
+  ]);
 
-// Chargement dynamique des shaders
-let request_vertex = new XMLHttpRequest();
-let request_fragment = new XMLHttpRequest();
+  vertexShader = vertex;
+  fragmentShader = fragment;
+  uniforms.texture_a.value = textureA;
+  uniforms.texture_b.value = textureB;
+  uniforms.depth_a.value = depthA;
+  uniforms.depth_b.value = depthB;
 
-// On les récupère sous forme de texte, à la bonne adresse
-request_vertex.open('GET', 'shaders/vertex_shader.glsl', true);
-request_vertex.responseType = 'text';
+  // Vérification et logs
+  if (!textureA || !(textureA instanceof THREE.Texture)) {
+    console.error('Texture A non chargée !');
+  } else {
+    console.log('Texture A chargée :', textureA);
+  }
+  if (!textureB || !(textureB instanceof THREE.Texture)) {
+    console.error('Texture B non chargée !');
+  } else {
+    console.log('Texture B chargée :', textureB);
+  }
 
-request_fragment.open('GET', 'shaders/fragment_shader.glsl', true);
-request_fragment.responseType = 'text';
-
-
-// Chaque chargement effectué appelle la fonction correspondante
-request_vertex.onload = () => {
-
-    if ( request_vertex.readyState === request_vertex.DONE && request_vertex.status === 200 ){
-        vertexDone( request_vertex.responseText );
-    }
+  shadersDone();
 }
 
-request_fragment.onload = () => {
-    if ( request_fragment.readyState === request_fragment.DONE && request_fragment.status === 200 ){
-        fragmentDone( request_fragment.responseText );
-    }
-}
-
-request_vertex.send(null);
-request_fragment.send(null);
+// Lance l'initialisation
+startApp();
 
 
-// Ces fonctions vérifient si l'autre shader est chargé.
-// Si c'est le cas, on appelle shadersDone()
-function vertexDone( text ) {
-    vertexShader = text;
-    if (fragmentShader !== null) {
-        shadersDone();
-    }
-}
 
-function fragmentDone( text ) {
-    fragmentShader = text;
-    if (vertexShader !== null) {
-        shadersDone();
-    }
-}
+
+
+// ...chargement asynchrone géré par startApp()...
 
 // On peut créer notre matériau et ursuivre.
 function shadersDone() {
@@ -154,15 +164,26 @@ function init( shaderPlane ) {
 }
 
 
+
+const time_in_seconds = 0.5;
+const time_factor = 1 / ( 60 * time_in_seconds );
+
+
 // Un autre exemple : avec une boucle de rendu
 function animate() {
-  requestAnimationFrame( animate );
-  render();
+
+    requestAnimationFrame( animate );
+    render();
+
+    if ( increment ) {
+        uniforms.u_transition.value += time_factor;
+        uniforms.u_transition.value = uniforms.u_transition.value > 1 ? 1 : uniforms.u_transition.value;
+    }
+
 }
 
 function render() {
   time++;
-
   stats.update();
   renderer.render( scene, camera );
 }
@@ -175,3 +196,51 @@ function onWindowResize() {
   renderer.setSize( window.innerWidth, window.innerHeight );
 }
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+document.addEventListener('keydown', e=> {
+
+  if ( e.key === 'm' ) {
+      start = !start;
+  }
+
+  test_start();
+
+});
+
+
+
+
+function test_start() {
+
+    if ( start && uniforms.u_transition.value === 0 ) {
+        increment = true;
+    }
+
+    if ( !start ) {
+        increment = false;
+        uniforms.u_transition.value = 0;
+    }
+
+}
